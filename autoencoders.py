@@ -4,16 +4,17 @@ import numpy as np
 
 class ShallowAutoencoder:
 
-    def __init__(self, input_dim:tuple, encoding_dim:int, optimizer="adam", loss="mse"):
+    def __init__(self, input_dim:tuple, encoding_dim:int, optimizer="adam", loss="binary_crossentropy",
+                 activation="relu"):
         self.encoding_dim = encoding_dim
         self.input_dim = input_dim
         # define model
         # input placeholder
-        input = keras.layers.Input(shape=input_dim)
+        input = keras.layers.Input(shape=input_dim, name='sh_ae_input')
         # single layer encoder
-        encoded = keras.layers.Dense(encoding_dim, activation='relu')(input)
+        encoded = keras.layers.Dense(encoding_dim, activation=activation, name='encoding_layer')(input)
         # single layer decoder (values will be gray-scale pixel between 0-1)
-        decoded = keras.layers.Dense(input_dim[0], activation='sigmoid')(encoded)
+        decoded = keras.layers.Dense(input_dim[0], activation='sigmoid', name='decoding_layer')(encoded)
 
         # full autoencoder model
         self.autoencoder = keras.models.Model(input, decoded, name='autoencoder')
@@ -24,8 +25,8 @@ class ShallowAutoencoder:
 
         # compile autoencoder, output is a (normalized) vector with values between 0-1
         # hence we use log loss
-        self.autoencoder.compile(optimizer=optimizer, loss=loss)#, metrics=['accuracy']) accuracy has
-                                                                 # little meaning in regression task without a sensitivity
+        self.autoencoder.compile(optimizer=optimizer, loss=loss, metrics=['accuracy'])
+
         print(self.autoencoder.summary())
 
     def fit(self, x_train, y_train, x_test, y_test, epochs, batch_size, tensorboard=None):
@@ -99,26 +100,26 @@ class ShallowDAE(ShallowAutoencoder):
 
 class DeepAutoencoder:
 
-    def __init__(self, input_dim:tuple, encoding_dim:list, optimizer="adam", loss="binary_crossentropy"):
+    def __init__(self, input_dim:tuple, encoding_dim:list, activation, optimizer="adam", loss="binary_crossentropy"):
         # todo batchnorm, dropout option
 
-        input = keras.layers.Input(shape=input_dim)
+        input = keras.layers.Input(shape=input_dim, name='deep_ae_input')
         prev = input
 
         # define encoder
         for layer_dim in encoding_dim:
-            encoded = keras.layers.Dense(layer_dim, activation='relu')(prev)
+            encoded = keras.layers.Dense(layer_dim, activation=activation, name='encoding_layer_'+str(layer_dim))(prev)
             prev = encoded
         # also keep track of encoder and decoder as standalone models
         self.encoder = keras.models.Model(input, encoded, name='encoder')  # returns encoded repr
         # input_to_decoder = keras.layers.Input(shape=(encoding_dim[-1],))
 
         # define decoder by unrolling in reverse order ('pyramidal' order)
-        for i, layer_dim in enumerate(reversed(encoding_dim)):
-            decoded = keras.layers.Dense(layer_dim, activation='relu')(prev)
+        for i, layer_dim in enumerate(reversed(encoding_dim[:-1])): # last encoding layer already present
+            decoded = keras.layers.Dense(layer_dim, activation=activation, name='decoding_layer_'+str(layer_dim))(prev)
             prev = decoded
         # add last layer (0-1 constraint since it's an image)
-        decoded = keras.layers.Dense(input_dim[0], activation='sigmoid')(prev)
+        decoded = keras.layers.Dense(input_dim[0], activation='sigmoid', name='output_layer')(prev)
         # self.decoder = keras.models.Model(input_to_decoder, decoded(input_to_decoder),
         #                                   name='decoder')
 
@@ -127,7 +128,7 @@ class DeepAutoencoder:
         self.autoencoder = keras.models.Model(input, decoded, name='full_autoencoder')
 
         # compile autoencoder
-        self.autoencoder.compile(optimizer=optimizer, loss=loss)
+        self.autoencoder.compile(optimizer=optimizer, loss=loss, metrics=['accuracy'])
 
         print(self.autoencoder.summary())
 
@@ -136,7 +137,7 @@ class DeepAutoencoder:
         # layer, then replace learned encoder and decoder weights in the autoencoder model skeleton
 
         # apply gaussian noise ONLY to input (not to intermediate hidden representations)
-        if(dae):
+        if dae:
             x_train_noise = ShallowDAE.apply_noise(x_train, mean=mean, std_dev=std_dev)
             x_test_noise = ShallowDAE.apply_noise(x_test, mean=mean, std_dev=std_dev)
             # really important to remember to make sure images are always normalized
@@ -146,11 +147,11 @@ class DeepAutoencoder:
         # define return values
         train_info = []
         # skip first (input) layer
-        for i, layer in enumerate(self.autoencoder.layers[1:(len(self.autoencoder.layers)//2)]):
+        for i, layer in enumerate(self.autoencoder.layers[1:(len(self.autoencoder.layers)//2)+1]):
             print('===== Training layer <%s> ====='%(layer.name))
             # print(layer.input_shape, layer.output_shape[1], x_train.shape)
 
-            # build shallow autoencoder (denoising already applied in case of DAE)
+            # build shallow autoencoder (noising already applied in case of DAE)
             layer_model = ShallowAutoencoder((layer.input_shape[1],), layer.output_shape[1])
             # fit it
             hist = layer_model.fit(x_train_noise, x_train, x_test_noise, x_test,
@@ -159,12 +160,15 @@ class DeepAutoencoder:
             layer.set_weights(layer_model.autoencoder.layers[1].get_weights()) # encoder params
             self.autoencoder.layers[-(i+1)].set_weights(layer_model.autoencoder.layers[-1].get_weights())  # decoder params
 
+            # todo use sigmoid for activations in range 0,1 or normalized (batchnorm?)the one obtained with ReLU
             # change input type for next encoder training (input consists of previous layer's hidden state)
-            x_train = layer_model.encode(x_train)
-            x_test = layer_model.encode(x_test)
+            x_train = layer_model.encode(x_train_noise)
+            # x_train = x_train / np.max(x_train)
+            x_test = layer_model.encode(x_test_noise)
+            # x_test = x_test / np.max(x_test)
             # no noise to apply to hidden representations
             x_train_noise = x_train
-            x_test_noise = x_test_noise
+            x_test_noise = x_test
 
             train_info.append(hist)
 
@@ -191,7 +195,7 @@ class DeepAutoencoder:
         :param x:
         :return:
         """
-        self.encoder.predict(x)
+        return self.encoder.predict(x)
 
     def reconstruction(self, x):
         """
@@ -200,7 +204,7 @@ class DeepAutoencoder:
         :param x:
         :return:
         """
-        self.autoencoder.predict(x)
+        return self.autoencoder.predict(x)
 
 class ConvDeepAutoencoder(DeepAutoencoder):
 

@@ -1,7 +1,8 @@
 import json
 import matplotlib.pyplot as plt
 import os
-
+from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA
 
 def train_info_to_json(hist:dict, filename):
     dir = "json_results"
@@ -53,4 +54,29 @@ def show_imgs(test_images, reconstruction, n):
         plt.gray()
         ax.get_xaxis().set_visible(False)
         ax.get_yaxis().set_visible(False)
+    plt.show()
+
+
+def tsne_visualization(x, labels=None, perplexity=30, iterations=4):
+    # in case data has a very high dimensionality, let's reduce it
+    # using PCA (denoising effect) as suggested by Hinton..
+    # https://lvdmaaten.github.io/publications/misc/Supplement_JMLR_2008.pdf
+    if x.shape[1] > 50:
+        # truncated SVD for sparse data
+        print("Applying PCA for denoising before t-sne")
+        x = PCA(n_components=30).fit_transform(x)
+        print("New data shape", x.shape)
+
+    best_x = TSNE(n_components=2, perplexity=perplexity).fit(x)
+    for i in range(5):
+        z = TSNE(n_components=2, perplexity=perplexity).fit(x)
+        if z.kl_divergence_ < best_x.kl_divergence_:
+            best_x = z
+    plt.scatter(best_x.embedding_[:, 0], best_x.embedding_[:, 1])
+    if labels is not None:
+        i = 0
+        for x, y in zip(best_x.embedding_[:, 0], best_x.embedding_[:, 1]):
+            plt.text(x, y, str(labels[i]), color="red", fontsize=12)
+            i += 1
+
     plt.show()

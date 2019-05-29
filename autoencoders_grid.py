@@ -32,21 +32,18 @@ if __name__ == '__main__':
 
     # grid search for number of neurons in each layer
     first_layer_val = [256, 128, 64]
-
-    epochs = 50
-    for n_layers in range(2, 6):
+    batch_size = 256
+    epochs = 100
+    # simple grid search on deep dae
+    for n_layers in range(4, 6):
         for first_layer in first_layer_val:
             layers_shape = []
             for i in range(0, n_layers):
                 if first_layer/(2 ** i) > 15:
                     layers_shape.append(int(first_layer/(2 ** i)))
+                else:
+                    continue
 
-            # build a shallow autoencoder
-            encoding_dim = int(first_layer/2)
-            print("Training DAE with {}-dim encoding".format(encoding_dim))
-            ae = autoencoders.ShallowDAE((784,), encoding_dim)
-            hist = ae.fit(x_train, x_test, epochs, 128, '/tmp/autoencoder')
-            tu.train_info_to_json(hist.history, "{}_dim-shallow_ae.json".format(encoding_dim))
             #tu.plot(hist.history['loss'])
 
             print("Training Deep-DAE with shape {}".format(layers_shape))
@@ -56,3 +53,13 @@ if __name__ == '__main__':
 
             for i, h in enumerate(dae_hist):
                 tu.train_info_to_json(h.history, "{}-{}layers_dae-layer_{}.json".format(first_layer, n_layers, i))
+
+
+    # simple grid search on shallow dae
+    for first_layer in first_layer_val:
+        # build a shallow autoencoder
+        encoding_dim = int(first_layer / 2)
+        print("Training DAE with {}-dim encoding".format(encoding_dim))
+        ae = autoencoders.ShallowDAE((784,), encoding_dim)
+        hist = ae.fit(x_train, x_test, epochs, batch_size, mean=0., std_dev=1.)  # , '/tmp/autoencoder')
+        tu.train_info_to_json(hist.history, "{}_dim-shallow_ae.json".format(encoding_dim))
