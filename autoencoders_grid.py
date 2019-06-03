@@ -31,15 +31,22 @@ if __name__ == '__main__':
     # x_test = np.random.randn(128, 784)
 
     # grid search for number of neurons in each layer
-    first_layer_val = [256, 128, 64]
+    hinton_layers = [1000, 500, 250, 30]
+    first_layer_val = [1000, 512, 256]
     batch_size = 256
-    epochs = 100
+    epochs = 50
+    print("Training Hinton DAE: {}".format(hinton_layers))
+    hinton = autoencoders.DeepAutoencoder((784, ), hinton_layers, 'sigmoid')
+    hinton_hist = hinton.fit_layerwise(x_train, x_test, epochs, batch_size, mean=0., std_dev=1.)
+    print("Hinton eval: {}".format(hinton.evaluate(x_test, x_test, 256, noise=False, mean=0., std_dev=1.)))
+    print("Hinton eval: {}".format(hinton.evaluate(x_test, x_test, 256, noise=True, mean=0., std_dev=1.)))
+    evals_deep = []
     # simple grid search on deep dae
     for n_layers in range(4, 6):
         for first_layer in first_layer_val:
             layers_shape = []
             for i in range(0, n_layers):
-                if first_layer/(2 ** i) > 15:
+                if first_layer/(2 ** i) > 7:
                     layers_shape.append(int(first_layer/(2 ** i)))
                 else:
                     continue
@@ -48,18 +55,25 @@ if __name__ == '__main__':
 
             print("Training Deep-DAE with shape {}".format(layers_shape))
             # build a deep DAE
-            ae = autoencoders.DeepAutoencoder((784,), layers_shape)
-            dae_hist = ae.fit_layerwise(x_train, x_test, epochs, 128)
+            ae = autoencoders.DeepAutoencoder((784,), layers_shape, 'sigmoid')
+            dae_hist = ae.fit_layerwise(x_train, x_test, epochs, batch_size, mean=0., std_dev=1.)
+            eval = ae.evaluate(x_test, x_test, noise=False, batch_size=256, mean=0., std_dev=1.)
+            eval_ = ae.evaluate(x_test, x_test, noise=True, batch_size=256, mean=0., std_dev=1.)
+            evals_deep.append(eval)
+            evals_deep.append(eval_)
+            print("Model {} has evaluation score of: {}".format(encoding_dim, eval))
+            print("Model {} has evaluation score of: {}".format(encoding_dim, eval_))
+            # for i, h in enumerate(dae_hist):
+            #     tu.train_info_to_json(h.history, "{}-{}layers_dae-layer_{}.json".format(first_layer, n_layers, i))
 
-            for i, h in enumerate(dae_hist):
-                tu.train_info_to_json(h.history, "{}-{}layers_dae-layer_{}.json".format(first_layer, n_layers, i))
-
-
+    evals = []
     # simple grid search on shallow dae
-    for first_layer in first_layer_val:
+    for encoding_dim in [1000, 512, 64, 30]:
         # build a shallow autoencoder
-        encoding_dim = int(first_layer / 2)
         print("Training DAE with {}-dim encoding".format(encoding_dim))
-        ae = autoencoders.ShallowDAE((784,), encoding_dim)
+        ae = autoencoders.ShallowDAE((784,), encoding_dim, activation='sigmoid')
         hist = ae.fit(x_train, x_test, epochs, batch_size, mean=0., std_dev=1.)  # , '/tmp/autoencoder')
-        tu.train_info_to_json(hist.history, "{}_dim-shallow_ae.json".format(encoding_dim))
+        eval = ae.evaluate(x_test, x_test, noise=False, batch_size=256, mean=0., std_dev=1.)
+        evals.append(eval)
+        print("Model {} has evaluation score of: {}".format(encoding_dim, eval))
+        # tu.train_info_to_json(hist.history, "{}_dim-shallow_ae.json".format(encoding_dim))

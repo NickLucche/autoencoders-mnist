@@ -82,9 +82,10 @@ class ShallowDAE(ShallowAutoencoder):
         # obtain values out bound [0, 1] for your images
         return x + noise_factor * noise
 
-    def __init__(self, input_dim:tuple, encoding_dim:int, optimizer="adam", loss="binary_crossentropy"):
+    def __init__(self, input_dim:tuple, encoding_dim:int, activation, optimizer="adam", loss="binary_crossentropy"):
         # build standard ae
-        super(ShallowDAE, self).__init__(input_dim, encoding_dim, optimizer, loss)
+        super(ShallowDAE, self).__init__(input_dim, encoding_dim, optimizer=optimizer,
+                                         loss=loss, activation=activation)
 
     def fit(self, x_train, x_test, epochs, batch_size, tensorboard=None, mean=0.5, std_dev=0.5):
         # apply gaussian noise to input
@@ -97,12 +98,23 @@ class ShallowDAE(ShallowAutoencoder):
         return super(ShallowDAE, self).fit(x_train_noise, x_train, x_test_noise, x_test,
                                            epochs, batch_size, tensorboard)
 
+    def evaluate(self, x, y, batch_size, noise=True, mean=.5, std_dev=.5):
+        x_noise = x
+        if noise:
+            # apply gaussian noise to input before evaluating
+            x_noise = ShallowDAE.apply_noise(x_noise, mean=mean, std_dev=std_dev)
+            # really important to remember to make sure images are always normalized
+            x_noise = np.clip(x_noise, 0., 1.)
+
+        return self.autoencoder.evaluate(x_noise, y, batch_size=batch_size)
+
 
 class DeepAutoencoder:
 
     def __init__(self, input_dim:tuple, encoding_dim:list, activation, optimizer="adam", loss="binary_crossentropy"):
         # todo batchnorm, dropout option
-
+        self.activation = activation
+        # model defined here MUST match the one built 'per-layer' in fit_layerwise
         input = keras.layers.Input(shape=input_dim, name='deep_ae_input')
         prev = input
 
@@ -151,8 +163,8 @@ class DeepAutoencoder:
             print('===== Training layer <%s> ====='%(layer.name))
             # print(layer.input_shape, layer.output_shape[1], x_train.shape)
 
-            # build shallow autoencoder (noising already applied in case of DAE)
-            layer_model = ShallowAutoencoder((layer.input_shape[1],), layer.output_shape[1])
+            # build shallow autoencoder (noising already applied in case of DAE) and make sure model structure is maintained
+            layer_model = ShallowAutoencoder((layer.input_shape[1],), layer.output_shape[1], activation=self.activation)
             # fit it
             hist = layer_model.fit(x_train_noise, x_train, x_test_noise, x_test,
                                    epochs, batch_size, tensorboard)
@@ -160,10 +172,9 @@ class DeepAutoencoder:
             layer.set_weights(layer_model.autoencoder.layers[1].get_weights()) # encoder params
             self.autoencoder.layers[-(i+1)].set_weights(layer_model.autoencoder.layers[-1].get_weights())  # decoder params
 
-            # todo use sigmoid for activations in range 0,1 or normalized (batchnorm?)the one obtained with ReLU
             # change input type for next encoder training (input consists of previous layer's hidden state)
             x_train = layer_model.encode(x_train_noise)
-            # x_train = x_train / np.max(x_train)
+            # x_train = x_train / np.max(x_train) todo tried normalizing activations
             x_test = layer_model.encode(x_test_noise)
             # x_test = x_test / np.max(x_test)
             # no noise to apply to hidden representations
@@ -205,6 +216,16 @@ class DeepAutoencoder:
         :return:
         """
         return self.autoencoder.predict(x)
+
+    def evaluate(self, x, y, batch_size, noise=True, mean=.5, std_dev=.5):
+        x_noise = x
+        if noise:
+            # apply gaussian noise to input before evaluating
+            x_noise = ShallowDAE.apply_noise(x_noise, mean=mean, std_dev=std_dev)
+            # really important to remember to make sure images are always normalized
+            x_noise = np.clip(x_noise, 0., 1.)
+
+        return self.autoencoder.evaluate(x_noise, y, batch_size=batch_size)
 
 class ConvDeepAutoencoder(DeepAutoencoder):
 

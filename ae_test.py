@@ -3,6 +3,7 @@ import numpy as np
 import train_utils as tu
 import os
 from keras.datasets import mnist
+import cv2
 import matplotlib.pyplot as plt
 
 # Provide a visualization of the encodings of the digits in the highest layer of each configuration,
@@ -55,4 +56,15 @@ if __name__ == '__main__':
     #     ax.get_yaxis().set_visible(False)
     # plt.show()
     # np.random.shuffle(x_test)
-    tu.tsne_visualization(x_test[:100], labels=y_test[:100], iterations=1)
+
+    n_samples = 2500
+    # ae.encode(x_test[:200])
+    tu.tsne_visualization(x_test[:n_samples], 'test.png', labels=y_test[:n_samples], iterations=1)
+    # tu.tsne_visualization(x_test[200:200+n_samples], 'test2.png', labels=y_test[200:200+n_samples], iterations=1)
+    #
+    # images = []
+    # for i in ['test.png', 'test2.png']:
+    #     images.append(cv2.imread(i))
+    # images = images + images + images + images + images
+    # tu.make_video(images, 'test')
+
